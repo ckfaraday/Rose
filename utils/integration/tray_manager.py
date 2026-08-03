@@ -25,14 +25,16 @@ log = get_logger()
 class TrayManager:
     """Manages the system tray icon for Rose"""
     
-    def __init__(self, quit_callback: Optional[Callable] = None):
+    def __init__(self, quit_callback: Optional[Callable] = None, restart_callback: Optional[Callable] = None):
         """
         Initialize the tray manager
         
         Args:
             quit_callback: Function to call when user clicks "Quit"
+            restart_callback: Function to call when user clicks "Restart"
         """
         self.quit_callback = quit_callback
+        self.restart_callback = restart_callback
         self.icon = None
         self.tray_thread = None
         self._stop_event = threading.Event()

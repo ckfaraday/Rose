@@ -762,6 +762,57 @@ def _update_registry_version() -> None:
     except Exception:
         pass
 
+def _schedule_restart() -> bool:
+    """Spawn a detached helper that relaunches Rose after this process exits.
+
+    The new instance cannot start while the current one is still alive because
+    of the single-instance mutex, so a small batch file waits for this PID to
+    exit and then starts Rose again.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    try:
+        pid = os.getpid()
+        if getattr(sys, 'frozen', False):
+            exe_path = Path(sys.executable).resolve()
+            workdir = exe_path.parent
+            launch_cmd = f'start "" /D "{workdir}" "{exe_path}"'
+        else:
+            # Development mode: relaunch `python main.py` from the project root
+            exe_path = Path(sys.executable).resolve()
+            workdir = Path(__file__).parent.parent
+            launch_cmd = f'start "" /D "{workdir}" "{exe_path}" "main.py"'
+
+        batch_path = Path(tempfile.gettempdir()) / f"rose_restart_{pid}.bat"
+
+        batch_content = (
+            "@echo off\n"
+            "setlocal enableextensions\n"
+            f'set "TARGET_PID={pid}"\n'
+            ":wait\n"
+            'tasklist /FI "PID eq %TARGET_PID%" /NH 2>NUL | find /I "%TARGET_PID%" >NUL\n'
+            'if not errorlevel 1 (\n'
+            '    ping 127.0.0.1 -n 2 >NUL\n'
+            '    goto wait\n'
+            ')\n'
+            f"{launch_cmd}\n"
+            'del "%~f0" >NUL 2>&1\n'
+            "exit\n"
+        )
+        batch_path.write_text(batch_content, encoding="utf-8")
+
+        subprocess.Popen(
+            ["cmd", "/c", str(batch_path)],
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        log.info(f"Restart scheduled via {batch_path}")
+        return True
+    except Exception as e:
+        log.error(f"Failed to schedule restart: {e}")
+        return False
 
 def run_league_unlock(args: Optional[argparse.Namespace] = None,
                       injection_threshold: Optional[float] = None) -> None:
